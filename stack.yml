@@ -1,0 +1,23 @@
+version: '3.1'
+
+services:
+  builder:
+    build: .
+    image: mgu/gis
+    command: echo "ok"
+  db:
+    image: mgu/gis
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - 5432
+    # restart: always
+    # healthcheck:
+      # test: "exit 0"
+
+  adminer:
+    image: adminer
+    # restart: always
+    ports:
+      - 8080:8080
