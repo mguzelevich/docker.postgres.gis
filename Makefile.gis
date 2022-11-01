@@ -1,0 +1,119 @@
+.PHONY: run test clean
+
+exec_root = $(shell pwd)
+mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
+# local_path := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
+local_path := $(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
+
+ts = $(shell date +%Y%m%d_%H%M%S)
+short_ts = $(shell date +%Y%m%d)
+
+compose_file = ${local_path}/stack.yml
+COMPOSE_CMD = docker-compose -f ${compose_file}
+
+# CONN_SERVER = host=pg port=5432 user=postgres password=postgres
+# CONN = dbname=gis ${CONN_SERVER}
+
+CSV_FLAGS = -oo AUTODETECT_TYPE=YES -oo X_POSSIBLE_NAMES=longitude -oo Y_POSSIBLE_NAMES=latitude
+SHP_FLAGS = -s_srs EPSG:4326 -t_srs EPSG:4326
+
+COMPOSE_RUN = ${COMPOSE_CMD} run -it --rm
+GDAL_CMD = ${COMPOSE_RUN} gdal
+PG_CMD = ${COMPOSE_RUN} pg
+
+build-gis-docker:
+	${COMPOSE_CMD} build builder
+
+run-gis-server:
+	${COMPOSE_CMD} ${args} up -d
+
+stop-gis-server:
+	${COMPOSE_CMD} ${args} stop
+
+##
+
+psql:
+	${PG_CMD} psql "${CONN}"
+
+psql-sql: sql_file = file.sql
+psql-sql:
+	${PG_CMD} psql "${CONN}" -f ${sql_file}
+
+psql-exec: sql = select true as ok;
+psql-exec:
+	${PG_CMD} psql "${CONN}" -c '${sql}'
+
+init-db:
+	make psql-exec sql='CREATE EXTENSION postgis; CREATE EXTENSION postgis_raster; CREATE EXTENSION h3; CREATE EXTENSION h3_postgis;'
+
+### /tools
+
+load-gpkg: input = /gis/data.gpkg
+load-gpkg: target = table
+load-gpkg:
+	make psql-exec sql='drop table if exists ${target};'
+	${GDAL_CMD} sh -c 'ogr2ogr -f "PostgreSQL" PG:"${CONN}" "${input}" -nln ${target}'
+
+load-csv: input = /gis/datasource.csv
+load-csv: target = table
+load-csv:
+	make psql-exec sql='drop table if exists ${target};'
+	${GDAL_CMD} sh -c 'ogr2ogr -f "PostgreSQL" PG:"${CONN}" "CSV:${input}" ${CSV_FLAGS} -nln ${target}'
+
+load-shp: /gis/input = shape.shp
+load-shp: target = table
+load-shp:
+	make psql-exec sql='drop table if exists ${target};'
+	${GDAL_CMD} sh -c 'ogr2ogr -f "PostgreSQL" PG:"${CONN}" "${input}" ${SHP_FLAGS} -nln ${target}'
+
+csv2ld: in_csv = source
+csv2ld: prefix = source
+csv2ld: out_ld = ${prefix}.ld
+csv2ld:
+	${GDAL_CMD} sh -c 'ogr2ogr -f GeoJSONSeq "${out_ld}" "CSV:${in_csv}" ${CSV_FLAGS}'
+
+shp2ld: in_shp = source
+shp2ld: prefix = source
+shp2ld: out_ld = ${prefix}.ld
+shp2ld:
+	${GDAL_CMD} sh -c 'ogr2ogr -f GeoJSONSeq "${out_ld}" "${in_shp}"'
+
+gpkg2ld: in_gpkg = source
+gpkg2ld: prefix = source
+gpkg2ld: out_ld = ${prefix}.ld
+gpkg2ld:
+	${GDAL_CMD} sh -c 'ogr2ogr -f GeoJSONSeq "${out_ld}" "${in_gpkg}"'
+
+csv2shp: input = /gis/input.csv
+csv2shp: prefix = /output/shape
+csv2shp: out_shp = ${prefix}.shp
+csv2shp: bzip2 = ${out_shp}.tar.bz2
+csv2shp:
+	${GDAL_CMD} sh -c 'rm ${prefix}.{dbf,prj,shp,shx,tar.bz2} || echo "ok"'
+	${GDAL_CMD} sh -c 'ogr2ogr -f "ESRI Shapefile" ${SHP_FLAGS} "${out_shp}" CSV:"${input}" ${CSV_FLAGS}'
+	${GDAL_CMD} sh -c 'cd /output; tar -cjf ..${bzip2} ..${prefix}.*'
+
+export-csv: sql_file = /gis/query.sql
+export-csv: prefix = /output/data
+export-csv: out_csv = ${prefix}.csv
+export-csv:
+	${GDAL_CMD} sh -c 'rm ${prefix}.{csv} || echo "ok"'
+	${GDAL_CMD} sh -c 'ogr2ogr -f "CSV" -t_srs EPSG:4326 "${out_csv}" PG:"${CONN}" -sql "@${sql_file}"'
+	${GDAL_CMD} sh -c 'bzip2 -k ${out_csv}'
+
+export-shp: sql_file = /sql/query.sql
+export-shp: prefix = /output/shape
+export-shp: out_shp = ${prefix}.shp
+export-shp: bzip2 = ${out_shp}.tar.bz2
+export-shp:
+	${GDAL_CMD} sh -c 'rm ${prefix}.{dbf,prj,shp,shx,tar.bz2} || echo "ok"'
+	${GDAL_CMD} sh -c 'ogr2ogr -f "ESRI Shapefile" ${SHP_FLAGS} "${out_shp}" PG:"${CONN}" -sql "@${sql_file}"'
+	${GDAL_CMD} sh -c 'cd /output; tar -cjf ..${bzip2} ..${prefix}.*'
+
+export-gpkg: sql_file = /sql/query.sql
+export-gpkg: prefix = /output/package
+export-gpkg: out_gpkg = ${prefix}.gpkg
+export-gpkg:
+	${GDAL_CMD} sh -c 'rm ${prefix}.{gpkg,gpkg.bz2} || echo "ok"'
+	${GDAL_CMD} sh -c 'ogr2ogr -f "GPKG" "${out_gpkg}" PG:"${CONN}" -sql "@${sql_file}"'
+	${GDAL_CMD} sh -c 'bzip2 -k ${out_gpkg}'

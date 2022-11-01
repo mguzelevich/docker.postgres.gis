@@ -1,0 +1,44 @@
+version: '3.1'
+
+services:
+  pg:
+    image: mguzelevich/gis
+    restart: always
+    environment:
+      POSTGRES_DB: gis
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_MULTIPLE_EXTENSIONS: postgis,h3,hstore,postgis_topology,postgis_raster,pgrouting
+    ports:
+      - 5432:5432
+    volumes:
+      - type: bind
+        source: ${WORKDIR}/src
+        target: /gis
+      - type: bind
+        source: ${WORKDIR}/output
+        target: /output
+      - type: bind
+        source: ${WORKDIR}/sql
+        target: /sql
+    healthcheck:
+      test: "exit 0"
+
+  gdal:
+    image: osgeo/gdal:alpine-small-latest
+    volumes:
+      - type: bind
+        source: ${WORKDIR}/src
+        target: /gis
+      - type: bind
+        source: ${WORKDIR}/output
+        target: /output
+      - type: bind
+        source: ${WORKDIR}/sql
+        target: /sql
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080

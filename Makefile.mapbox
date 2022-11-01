@@ -1,0 +1,36 @@
+.PHONY: run test clean
+
+exec_root = $(shell pwd)
+ts = $(shell date +%Y%m%d_%H%M%S)
+short_ts = $(shell date +%Y%m%d)
+
+### export
+upload-source: tilesource = tilesource_name
+upload-source: ld_file = output/source.ld
+upload-source:
+	curl -X PUT "https://api.mapbox.com/tilesets/v1/sources/${USERNAME}/${tilesource}?access_token=${MAPBOX_TOKEN}" \
+		-F file="@${ld_file}" --header "Content-Type: multipart/form-data"
+
+list-sources:
+	curl -X GET "https://api.mapbox.com/tilesets/v1/sources/${USERNAME}/?access_token=${MAPBOX_TOKEN}" # \
+		# -F file="@${INPUT}" # --header "Content-Type: multipart/form-data"
+
+delete-source: tilesource = tilesource_name
+delete-source:
+	curl -X DELETE "https://api.mapbox.com/tilesets/v1/sources/${USERNAME}/${tilesource}?access_token=${MAPBOX_TOKEN}"
+
+create-tileset: TILESET_NAME = tileset_name
+create-tileset: META = src/meta.json
+create-tileset:
+	curl -X POST "https://api.mapbox.com/tilesets/v1/${USERNAME}.${TILESET_NAME}?access_token=${MAPBOX_TOKEN}" \
+		-d @${META} \
+		--header "Content-Type:application/json"
+
+publish-tileset: TILESET_NAME = tileset_name
+publish-tileset:
+	curl -X POST "https://api.mapbox.com/tilesets/v1/${USERNAME}.${TILESET_NAME}/publish?access_token=${MAPBOX_TOKEN}"
+
+update-recipe:
+	curl -X PATCH "https://api.mapbox.com/tilesets/v1/${USERNAME}.${TILESET_NAME}/recipe?access_token=${MAPBOX_TOKEN}" \
+		-d @src/tileset-metadata.json \
+		--header "Content-Type:application/json"
