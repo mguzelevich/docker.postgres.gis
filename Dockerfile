@@ -3,7 +3,7 @@ FROM postgres:15
 LABEL maintainer="mgu"
 
 ENV POSTGIS_MAJOR 3
-ENV POSTGIS_VERSION 3.3.1+dfsg-3.pgdg110+1
+ENV POSTGIS_VERSION 3.3.2+dfsg-1.pgdg110+1
 
 # pgRouting
 ENV PGROUTING_MAJOR 2.5
